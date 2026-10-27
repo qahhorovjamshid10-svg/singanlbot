@@ -1,0 +1,88 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © XAUUSD Telegram AI Signal Bot (Demo / Paper Trading Only)
+//@version=5
+indicator("XAUUSD AI Signal Bot (EMA 50/200 + RSI 14 + ATR 14) [4-in-1 Free Plan]", shorttitle="XAUUSD AI Bot", overlay=true)
+
+// ============================================================================
+// ESLATMA (TRADINGVIEW FREE TARIF UCHUN):
+// 1. TradingView Free (Basic) tarifida grafikda faqat 2 ta indikatorga ruxsat bor.
+//    Ushbu skript EMA 50, EMA 200, RSI 14, ATR 14 va TP1/TP2/TP3/SL darajalarini
+//    BITTA indikator ichida birlashtiradi!
+// 2. TradingView Free tarifida to'g'ridan-to'g'ri Webhook URL alerts mavjud emas
+//    (u pullik Essential tarifdan boshlanadi). Shuning uchun Python botimiz
+//    avtonom tarzda ochiq bozor ma'lumotlaridan o'zi signal hisoblaydi.
+// ============================================================================
+
+// --- Sozlamalar ---
+emaFastLen   = input.int(50,  "EMA Tez (Fast)", minval=1)
+emaSlowLen   = input.int(200, "EMA Sekin (Slow)", minval=1)
+rsiLen       = input.int(14,  "RSI Davri", minval=1)
+atrLen       = input.int(14,  "ATR Davri", minval=1)
+atrSlMult    = input.float(1.5, "ATR Stop-Loss Koeffitsiyenti", minval=0.1, step=0.1)
+tp1RR        = input.float(1.0, "TP1 Risk/Reward (1:R)", minval=0.5, step=0.5)
+tp2RR        = input.float(2.0, "TP2 Risk/Reward (1:R)", minval=0.5, step=0.5)
+tp3RR        = input.float(3.0, "TP3 Risk/Reward (1:R)", minval=0.5, step=0.5)
+webhookToken = input.string("CHANGE_ME", "Webhook Secret Token (ixtiyoriy)")
+
+// --- Indikatorlar ---
+ema50  = ta.ema(close, emaFastLen)
+ema200 = ta.ema(close, emaSlowLen)
+rsi14  = ta.rsi(close, rsiLen)
+atr14  = ta.atr(atrLen)
+
+// --- Trend va Momentum Shartlari (Faqat yopilgan shamda: barstate.isconfirmed) ---
+candleBody      = math.abs(close - open)
+trendSeparation = math.abs(ema50 - ema200) >= 0.35 * atr14
+
+bullishTrend    = ema50 > ema200 and ema50 > ema50[1] and ema200 >= ema200[1] and close > ema50 and trendSeparation
+bullishMomentum = rsi14 >= 53.0 and rsi14 <= 67.0 and (rsi14 - rsi14[1]) >= 1.5
+goldenCross     = ta.crossover(ema50, ema200)
+rsiCrossUp      = ta.crossover(rsi14, 53.0) and (close - ema50) <= 1.2 * atr14
+emaPullbackBuy  = low[1] <= ema50[1] and close[1] >= ema200[1] and close > ema50 and (close - ema50) <= 1.2 * atr14
+
+buySignal = barstate.isconfirmed and bullishTrend and bullishMomentum and close > open and candleBody >= 0.25 * atr14 and (goldenCross or emaPullbackBuy or rsiCrossUp)
+
+bearishTrend    = ema50 < ema200 and ema50 < ema50[1] and ema200 <= ema200[1] and close < ema50 and trendSeparation
+bearishMomentum = rsi14 >= 33.0 and rsi14 <= 47.0 and (rsi14[1] - rsi14) >= 1.5
+deathCross      = ta.crossunder(ema50, ema200)
+rsiCrossDown    = ta.crossunder(rsi14, 47.0) and (ema50 - close) <= 1.2 * atr14
+emaPullbackSell = high[1] >= ema50[1] and close[1] <= ema200[1] and close < ema50 and (ema50 - close) <= 1.2 * atr14
+
+sellSignal = barstate.isconfirmed and bearishTrend and bearishMomentum and close < open and candleBody >= 0.25 * atr14 and (deathCross or emaPullbackSell or rsiCrossDown)
+
+// --- Entry, SL, TP1, TP2, TP3 hisoblash ---
+slDist = atr14 * atrSlMult
+
+var float activeEntry = na
+var float activeSL    = na
+var float activeTP1   = na
+var float activeTP2   = na
+var float activeTP3   = na
+
+if buySignal
+    activeEntry := close
+    activeSL    := close - slDist
+    activeTP1   := close + slDist * tp1RR
+    activeTP2   := close + slDist * tp2RR
+    activeTP3   := close + slDist * tp3RR
+
+if sellSignal
+    activeEntry := close
+    activeSL    := close + slDist
+    activeTP1   := close - slDist * tp1RR
+    activeTP2   := close - slDist * tp2RR
+    activeTP3   := close - slDist * tp3RR
+
+// --- Grafikda chizish ---
+plot(ema50,  "EMA 50",  color=color.new(color.aqua, 0),   linewidth=2)
+plot(ema200, "EMA 200", color=color.new(color.orange, 0), linewidth=2)
+
+plotshape(buySignal,  title="BUY Signal",  style=shape.labelup,   location=location.belowbar, color=color.green, text="BUY",  textcolor=color.white, size=size.small)
+plotshape(sellSignal, title="SELL Signal", style=shape.labeldown, location=location.abovebar, color=color.red,   text="SELL", textcolor=color.white, size=size.small)
+
+// --- Alert xabarlari (JSON format) ---
+if buySignal
+    alert('{"secret":"' + webhookToken + '","symbol":"XAUUSD","timeframe":"' + timeframe.period + '","side":"BUY","is_closed":true,"candle_timestamp":' + str.tostring(time / 1000) + ',"entry_price":' + str.tostring(close) + ',"atr":' + str.tostring(atr14) + ',"ema50":' + str.tostring(ema50) + ',"ema200":' + str.tostring(ema200) + ',"rsi":' + str.tostring(rsi14) + '}', alert.freq_once_per_bar_close)
+
+if sellSignal
+    alert('{"secret":"' + webhookToken + '","symbol":"XAUUSD","timeframe":"' + timeframe.period + '","side":"SELL","is_closed":true,"candle_timestamp":' + str.tostring(time / 1000) + ',"entry_price":' + str.tostring(close) + ',"atr":' + str.tostring(atr14) + ',"ema50":' + str.tostring(ema50) + ',"ema200":' + str.tostring(ema200) + ',"rsi":' + str.tostring(rsi14) + '}', alert.freq_once_per_bar_close)

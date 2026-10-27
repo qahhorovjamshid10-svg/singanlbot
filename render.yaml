@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: xauusd-telegram-signal-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py --mode run
+    healthCheckPath: /health
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_DEFAULT_CHAT_ID
+        sync: false
+      - key: WEBHOOK_SECRET_TOKEN
+        generateValue: true
+      - key: SYMBOL
+        value: XAUUSD
+      - key: TIMEFRAME
+        value: 15m
+      - key: MARKET_DATA_SOURCE
+        value: auto
+      - key: INITIAL_VIRTUAL_BALANCE
+        value: "10000.0"
+      - key: RISK_PER_TRADE_PCT
+        value: "1.0"
+      - key: POLL_INTERVAL_SECONDS
+        value: "60"
+      - key: PORT
+        value: "8000"

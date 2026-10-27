@@ -1,0 +1,5 @@
+# XAUUSD Telegram AI Signal Bot (Demo / Paper Trading)
+# Asosiy kutubxonalar (Python 3.10+ standart kutubxonalari bilan ham to'liq mos)
+python-dotenv>=1.0.1
+httpx>=0.27.0
+pytest>=8.0.0
