@@ -146,10 +146,10 @@ class SignalBotEngine:
             f"• <b>ATR 14:</b> <code>{snap.atr:.2f}</code> (SL masofa: <code>{snap.atr * self.config.atr_sl_multiplier:.2f}</code>)\n"
             f"{active_line}"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            "ℹ️ <i>Bot har 60 soniyada yangi yopilgan shamni avtomatik tekshiradi va signal chiqishi bilan xabar yuboradi.</i>"
+            f"ℹ️ <i>Bot har {self.config.poll_interval_seconds} soniyada yangi yopilgan M1 shamni avtomatik tekshiradi va signal chiqishi bilan xabar yuboradi.</i>"
         )
 
-    def _warmup_recent_candles_if_empty(self, closed_candles: list[Candle], lookback: int = 12) -> Optional[Signal]:
+    def _warmup_recent_candles_if_empty(self, closed_candles: list[Candle], lookback: int = 30) -> Optional[Signal]:
         """
         If SQLite database is completely empty (e.g. fresh deploy on Render),
         scan the last `lookback` closed candles so any recent signal from the
@@ -209,7 +209,9 @@ class SignalBotEngine:
             for idx in range(start_idx, len(closed_candles)):
                 self.paper_trader.evaluate_signal_on_candle(active_sig, closed_candles[idx])
 
-        if last_new_signal is not None:
+        recent_all = self.db.get_recent_signals(limit=1)
+        if recent_all:
+            last_new_signal = recent_all[0]
             self.telegram_bot.notify_new_signal(last_new_signal)
         return last_new_signal
 
@@ -241,7 +243,7 @@ class SignalBotEngine:
 
         # Warm-up recent candles if DB is empty on fresh deploy (only on real market polling)
         if candles_override is None and not self.db.get_all_signal_keys():
-            warm_sig = self._warmup_recent_candles_if_empty(closed_candles, lookback=12)
+            warm_sig = self._warmup_recent_candles_if_empty(closed_candles, lookback=30)
             latest_closed = closed_candles[-1]
             self.db.set_state("last_processed_candle_ts", str(latest_closed.timestamp))
             return {

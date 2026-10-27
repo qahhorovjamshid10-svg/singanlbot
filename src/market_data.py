@@ -82,6 +82,8 @@ def fetch_yahoo_gold_candles(
     yf_interval = timeframe.lower()
     if yf_interval == "4h":
         yf_interval = "1h"
+    if yf_interval == "1m" and range_str not in {"1d", "2d", "5d"}:
+        range_str = "2d"
 
     url = (
         f"https://query1.finance.yahoo.com/v8/finance/chart/GC=F"

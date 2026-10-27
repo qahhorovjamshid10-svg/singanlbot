@@ -47,7 +47,7 @@ class BotConfig:
 
     # Bozor va algoritm
     symbol: str = "XAUUSD"
-    timeframe: str = "15m"
+    timeframe: str = "1m"
     market_data_source: str = "auto"
     twelvedata_api_key: str = ""
 
@@ -69,7 +69,7 @@ class BotConfig:
     move_sl_to_be_on_tp1: bool = False
 
     # Polling va Webhook
-    poll_interval_seconds: int = 60
+    poll_interval_seconds: int = 15
     webhook_enabled: bool = True
     webhook_host: str = "0.0.0.0"
     port: int = 8000
@@ -87,6 +87,14 @@ class BotConfig:
         raw_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip().strip('"').strip("'")
         if raw_token.lower().startswith("bot") and ":" in raw_token:
             raw_token = raw_token[3:]
+        raw_tf = os.getenv("TIMEFRAME", "1m").strip().lower()
+        # Agar eski Render Blueprint sozlamasida "15m" qolib ketgan bo'lsa, M1 ("1m") ga o'tkazamiz
+        if raw_tf in {"", "15m", "m1"}:
+            raw_tf = "1m"
+        raw_poll = int(os.getenv("POLL_INTERVAL_SECONDS", "15"))
+        if raw_tf == "1m" and raw_poll > 20:
+            raw_poll = 15
+
         return cls(
             telegram_bot_token=raw_token,
             telegram_default_chat_id=(
@@ -95,7 +103,7 @@ class BotConfig:
                 or os.getenv("TELEGRAM_CHAT_ID", "")
             ).strip().strip('"').strip("'"),
             symbol=os.getenv("SYMBOL", "XAUUSD").strip().upper(),
-            timeframe=os.getenv("TIMEFRAME", "15m").strip(),
+            timeframe=raw_tf,
             market_data_source=os.getenv("MARKET_DATA_SOURCE", "auto").strip().lower(),
             twelvedata_api_key=os.getenv("TWELVEDATA_API_KEY", "").strip(),
             ema_fast_period=int(os.getenv("EMA_FAST_PERIOD", "50")),
@@ -111,7 +119,7 @@ class BotConfig:
             initial_virtual_balance=float(os.getenv("INITIAL_VIRTUAL_BALANCE", "10000.0")),
             risk_per_trade_pct=float(os.getenv("RISK_PER_TRADE_PCT", "1.0")),
             move_sl_to_be_on_tp1=_parse_bool(os.getenv("MOVE_SL_TO_BE_ON_TP1", "false")),
-            poll_interval_seconds=int(os.getenv("POLL_INTERVAL_SECONDS", "60")),
+            poll_interval_seconds=raw_poll,
             webhook_enabled=_parse_bool(os.getenv("WEBHOOK_ENABLED", "true"), True),
             webhook_host=os.getenv("WEBHOOK_HOST", "0.0.0.0").strip(),
             port=int(os.getenv("PORT", "8000")),

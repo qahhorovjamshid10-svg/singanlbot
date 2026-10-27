@@ -136,64 +136,70 @@ class XAUUSDStrategy:
         reason: str = ""
 
         # --- BUY SHARTLARI ---
-        # Trend: EMA 50 > EMA 200, ikkala EMA ko'tarilmoqda va sham EMA 50 ustida yopilgan
+        # Trend: EMA 50 > EMA 200 (yoki M1 da narx ikkala EMA ustiga yorib chiqqan va EMA50 o'smoqda)
         candle_body = abs(curr.close - curr.open)
-        trend_separation = abs(ef - es) >= 0.35 * atr
-        bullish_trend = (
-            ef > es
+        trend_separation = abs(ef - es) >= 0.25 * atr
+        classic_uptrend = ef > es and ef > prev_ef and curr.close > ef and trend_separation
+        ema_breakout_up = (
+            curr.close > ef
+            and curr.close > es
             and ef > prev_ef
-            and es >= prev_es
-            and curr.close > ef
-            and trend_separation
+            and prev.close <= max(prev_ef, prev_es)
         )
-        # Momentum: RSI 14 [50, 70] oralig'ida va o'smoqda
-        bullish_momentum = 50.0 <= rsi <= 70.0 and (rsi - prev_rsi) >= 1.5
+        bullish_trend = classic_uptrend or ema_breakout_up
+        # Momentum: RSI 14 [50, 72] oralig'ida va o'smoqda
+        bullish_momentum = 50.0 <= rsi <= 72.0 and (rsi - prev_rsi) >= 1.2
 
-        if bullish_trend and bullish_momentum and curr.close > curr.open and candle_body >= 0.25 * atr:
+        if bullish_trend and bullish_momentum and curr.close > curr.open and candle_body >= 0.20 * atr:
             golden_cross = prev_ef <= prev_es and ef > es
             rsi_cross_up = prev_rsi < 50.0 and rsi >= 50.0
-            rsi_impulse_up = prev_rsi <= 55.0 and (rsi - prev_rsi) >= 3.0
+            rsi_impulse_up = prev_rsi <= 58.0 and (rsi - prev_rsi) >= 2.5
             ema_pullback_bounce = (
                 min(prev.low, curr.low) <= ef + 0.5 * atr
-                and prev.close >= prev_es
                 and curr.close > ef
-                and (curr.close - ef) <= 1.5 * atr
+                and (curr.close - ef) <= 1.8 * atr
             )
             if golden_cross:
                 side = "BUY"
                 reason = "EMA50/EMA200 Golden Cross + RSI14 bullish momentum"
+            elif ema_breakout_up:
+                side = "BUY"
+                reason = "EMA50 va EMA200 yuqoriga yorib o'tish (Breakout) + RSI14 tasdiq"
             elif ema_pullback_bounce:
                 side = "BUY"
-                reason = "Uptrend (EMA50 > EMA200) + EMA50 zona pullback bounce + RSI14 tasdiq"
-            elif (rsi_cross_up or rsi_impulse_up) and (curr.close - ef) <= 1.5 * atr:
+                reason = "Uptrend (EMA50 tepada EMA200 dan) + EMA50 pullback bounce + RSI14 tasdiq"
+            elif (rsi_cross_up or rsi_impulse_up) and (curr.close - ef) <= 1.8 * atr:
                 side = "BUY"
-                reason = "Uptrend (EMA50 > EMA200) + RSI14 bullish impuls tasdig'i"
+                reason = "Uptrend (EMA50 tepada EMA200 dan) + RSI14 bullish impuls tasdig'i"
 
         # --- SELL SHARTLARI ---
-        # Trend: EMA 50 < EMA 200, ikkala EMA pasaymoqda va sham EMA 50 ostida yopilgan
-        bearish_trend = (
-            ef < es
+        # Trend: EMA 50 < EMA 200 (yoki M1 da narx ikkala EMA ostiga yorib tushgan va EMA50 pasaymoqda)
+        classic_downtrend = ef < es and ef < prev_ef and curr.close < ef and trend_separation
+        ema_breakdown = (
+            curr.close < ef
+            and curr.close < es
             and ef < prev_ef
-            and es <= prev_es
-            and curr.close < ef
-            and trend_separation
+            and prev.close >= min(prev_ef, prev_es)
         )
-        # Momentum: RSI 14 [30, 50] oralig'ida va pasaymoqda
-        bearish_momentum = 30.0 <= rsi <= 50.0 and (prev_rsi - rsi) >= 1.5
+        bearish_trend = classic_downtrend or ema_breakdown
+        # Momentum: RSI 14 [28, 50] oralig'ida va pasaymoqda
+        bearish_momentum = 28.0 <= rsi <= 50.0 and (prev_rsi - rsi) >= 1.2
 
-        if side is None and bearish_trend and bearish_momentum and curr.close < curr.open and candle_body >= 0.25 * atr:
+        if side is None and bearish_trend and bearish_momentum and curr.close < curr.open and candle_body >= 0.20 * atr:
             death_cross = prev_ef >= prev_es and ef < es
             rsi_cross_down = prev_rsi > 50.0 and rsi <= 50.0
-            rsi_impulse_down = prev_rsi >= 45.0 and (prev_rsi - rsi) >= 3.0
+            rsi_impulse_down = prev_rsi >= 42.0 and (prev_rsi - rsi) >= 2.5
             ema_pullback_reject = (
                 max(prev.high, curr.high) >= ef - 0.5 * atr
-                and prev.close <= prev_es
                 and curr.close < ef
                 and (ef - curr.close) <= 1.8 * atr
             )
             if death_cross:
                 side = "SELL"
                 reason = "EMA50/EMA200 Death Cross + RSI14 bearish momentum"
+            elif ema_breakdown:
+                side = "SELL"
+                reason = "EMA50 va EMA200 pastga yorib o'tish (Breakdown) + RSI14 tasdiq"
             elif ema_pullback_reject:
                 side = "SELL"
                 reason = "Downtrend (EMA50 pastda EMA200 dan) + EMA50 zona pullback rejection + RSI14 tasdiq"

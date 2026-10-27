@@ -16,7 +16,7 @@ services:
       - key: SYMBOL
         value: XAUUSD
       - key: TIMEFRAME
-        value: 15m
+        value: 1m
       - key: MARKET_DATA_SOURCE
         value: auto
       - key: INITIAL_VIRTUAL_BALANCE
@@ -24,6 +24,6 @@ services:
       - key: RISK_PER_TRADE_PCT
         value: "1.0"
       - key: POLL_INTERVAL_SECONDS
-        value: "60"
+        value: "15"
       - key: PORT
         value: "8000"
