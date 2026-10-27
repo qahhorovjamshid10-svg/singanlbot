@@ -89,9 +89,9 @@ class TelegramBotService:
         self._send_callback = send_callback
         self._last_update_id: int = 0
 
-        if self.config.telegram_default_chat_id:
+        for cid in self.config.get_default_chat_ids():
             self.db.add_subscriber(
-                self.config.telegram_default_chat_id,
+                cid,
                 username="default",
                 first_name="DefaultChat",
             )
@@ -290,8 +290,8 @@ class TelegramBotService:
     def broadcast(self, text: str) -> int:
         """Broadcast a message to all active subscribers."""
         subscribers = self.db.get_active_subscribers()
-        if not subscribers and self.config.telegram_default_chat_id:
-            subscribers = [self.config.telegram_default_chat_id]
+        if not subscribers:
+            subscribers = self.config.get_default_chat_ids()
 
         sent_count = 0
         for chat_id in subscribers:

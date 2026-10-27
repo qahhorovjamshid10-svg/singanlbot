@@ -104,3 +104,22 @@ def test_telegram_commands_and_notifications() -> None:
     assert format_new_signal_message(sig)
     assert format_level_hit_message(ev)
     db.close()
+
+
+def test_multiple_chat_ids_in_default_config() -> None:
+    db = SignalDatabase(":memory:")
+    sent_to: list[str] = []
+    cfg = BotConfig(telegram_default_chat_id="111111, 222222")
+    bot = TelegramBotService(
+        db=db,
+        config=cfg,
+        send_callback=lambda chat_id, text: (sent_to.append(chat_id) or True),
+    )
+    subs = db.get_active_subscribers()
+    assert "111111" in subs
+    assert "222222" in subs
+
+    count = bot.broadcast("Test xabar ikkita chatga")
+    assert count == 2
+    assert sent_to == ["111111", "222222"]
+    db.close()

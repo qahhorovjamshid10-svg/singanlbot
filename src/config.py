@@ -86,7 +86,11 @@ class BotConfig:
         _load_env_file(env_path)
         return cls(
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
-            telegram_default_chat_id=os.getenv("TELEGRAM_DEFAULT_CHAT_ID", "").strip(),
+            telegram_default_chat_id=(
+                os.getenv("TELEGRAM_DEFAULT_CHAT_ID", "")
+                or os.getenv("TELEGRAM_CHAT_IDS", "")
+                or os.getenv("TELEGRAM_CHAT_ID", "")
+            ).strip(),
             symbol=os.getenv("SYMBOL", "XAUUSD").strip().upper(),
             timeframe=os.getenv("TIMEFRAME", "15m").strip(),
             market_data_source=os.getenv("MARKET_DATA_SOURCE", "auto").strip().lower(),
@@ -113,6 +117,16 @@ class BotConfig:
             database_path=os.getenv("DATABASE_PATH", "data/xauusd_signals.db").strip(),
             log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
         )
+
+    def get_default_chat_ids(self) -> list[str]:
+        """Parse one or multiple comma/semicolon/space separated chat IDs."""
+        raw = self.telegram_default_chat_id.replace(";", ",").replace(" ", ",")
+        ids: list[str] = []
+        for item in raw.split(","):
+            cleaned = item.strip()
+            if cleaned and cleaned not in ids:
+                ids.append(cleaned)
+        return ids
 
     def has_valid_telegram_token(self) -> bool:
         """Check whether a real BotFather token is configured."""
