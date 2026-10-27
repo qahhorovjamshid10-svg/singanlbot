@@ -118,10 +118,19 @@ class SignalBotEngine:
             return "⚠️ Indikatorlarni hisoblash uchun yetarli shamlar yo'q."
 
         trend = (
-            "🟢 KO'TARILUVCHI (BULLISH: EMA50 > EMA200)"
+            "🟢 KO'TARILUVCHI (BULLISH: EMA50 &gt; EMA200)"
             if snap.ema_fast > snap.ema_slow
-            else "🔴 PASAYUVCHI (BEARISH: EMA50 < EMA200)"
+            else "🔴 PASAYUVCHI (BEARISH: EMA50 &lt; EMA200)"
         )
+        active = self.db.get_active_signals()
+        active_line = ""
+        if active:
+            s = active[-1]
+            active_line = (
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                f"🔥 <b>Faol Signal:</b> {s.symbol} <b>{s.side}</b> @ <code>{s.entry_price:.2f}</code>\n"
+                f"• SL: <code>{s.stop_loss:.2f}</code> | TP1: <code>{s.tp1:.2f}</code> | TP2: <code>{s.tp2:.2f}</code> | TP3: <code>{s.tp3:.2f}</code>\n"
+            )
         return (
             "🔎 <b>XAUUSD JONLI BOZOR VA INDIKATOR TAHLILI (/scan)</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
@@ -135,6 +144,7 @@ class SignalBotEngine:
             f"• <b>EMA 50:</b> <code>{snap.ema_fast:.2f}</code> | <b>EMA 200:</b> <code>{snap.ema_slow:.2f}</code>\n"
             f"• <b>RSI 14:</b> <code>{snap.rsi:.2f}</code> (Oldingi: <code>{(snap.prev_rsi or snap.rsi):.2f}</code>)\n"
             f"• <b>ATR 14:</b> <code>{snap.atr:.2f}</code> (SL masofa: <code>{snap.atr * self.config.atr_sl_multiplier:.2f}</code>)\n"
+            f"{active_line}"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "ℹ️ <i>Bot har 60 soniyada yangi yopilgan shamni avtomatik tekshiradi va signal chiqishi bilan xabar yuboradi.</i>"
         )

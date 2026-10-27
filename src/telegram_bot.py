@@ -6,8 +6,10 @@ Bildirishnomalar: Yangi BUY/SELL signali hamda TP1, TP2, TP3, SL urilishi.
 
 from __future__ import annotations
 
+import html
 import json
 import logging
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -38,7 +40,7 @@ def format_new_signal_message(signal: Signal) -> str:
         "📊 <b>Indikator ko'rsatkichlari:</b>",
         f"• EMA 50: <code>{signal.ema_fast:.2f}</code> | EMA 200: <code>{signal.ema_slow:.2f}</code>",
         f"• RSI 14: <code>{signal.rsi:.2f}</code> | ATR 14: <code>{signal.atr:.2f}</code>",
-        f"• Tasdiq: {signal.reason}",
+        f"• Tasdiq: {html.escape(signal.reason)}",
         f"• Virtual xavf (Risk): <code>${signal.risk_usd:.2f}</code>",
         "━━━━━━━━━━━━━━━━━━━━",
         f"<i>{DISCLAIMER_UZ}</i>",
@@ -90,6 +92,7 @@ class TelegramBotService:
         self._send_callback = send_callback
         self._scan_callback = scan_callback
         self._last_update_id: int = 0
+        self._webhook_cleared: bool = False
 
         for cid in self.config.get_default_chat_ids():
             self.db.add_subscriber(
@@ -280,7 +283,7 @@ class TelegramBotService:
     # Outgoing Notifications & Telegram HTTP API
     # ------------------------------------------------------------------
     def send_message_to_chat(self, chat_id: str, text: str) -> bool:
-        """Send an HTML-formatted message to a single Telegram chat."""
+        """Send an HTML-formatted message to a single Telegram chat with plain-text fallback."""
         if self._send_callback is not None:
             return self._send_callback(str(chat_id), text)
 
@@ -309,8 +312,58 @@ class TelegramBotService:
                 body = json.loads(resp.read().decode("utf-8"))
                 return bool(body.get("ok"))
         except Exception as exc:
-            logger.error("Failed to send Telegram message to %s: %s", chat_id, exc)
-            return False
+            logger.warning("HTML sendMessage failed for %s (%s), retrying plain text", chat_id, exc)
+            plain_text = html.unescape(re.sub(r"<[^>]+>", "", text))
+            fallback_payload = json.dumps(
+                {
+                    "chat_id": str(chat_id),
+                    "text": plain_text,
+                    "disable_web_page_preview": True,
+                }
+            ).encode("utf-8")
+            fallback_req = urllib.request.Request(
+                url,
+                data=fallback_payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(fallback_req, timeout=10.0) as resp2:
+                    body2 = json.loads(resp2.read().decode("utf-8"))
+                    return bool(body2.get("ok"))
+            except Exception as exc2:
+                logger.error("Failed to send Telegram message to %s: %s", chat_id, exc2)
+                return False
+
+    def _ensure_polling_ready(self) -> None:
+        """Clear any stale Telegram webhook and register bot menu commands once."""
+        if self._webhook_cleared or not self.config.has_valid_telegram_token():
+            return
+        self._webhook_cleared = True
+        base = f"https://api.telegram.org/bot{self.config.telegram_bot_token}"
+        try:
+            urllib.request.urlopen(f"{base}/deleteWebhook?drop_pending_updates=false", timeout=6.0)
+        except Exception as exc:
+            logger.debug("deleteWebhook notice: %s", exc)
+        try:
+            cmds = [
+                {"command": "start", "description": "Botni boshlash va obuna bo'lish"},
+                {"command": "scan", "description": "Jonli XAUUSD narxi va indikator tahlili"},
+                {"command": "status", "description": "Faol signallar va bot holati"},
+                {"command": "signals", "description": "Oxirgi signallar tarixi"},
+                {"command": "stats", "description": "Demo savdo statistikasi"},
+                {"command": "pause", "description": "Monitoringni vaqtincha to'xtatish"},
+                {"command": "resume", "description": "Monitoringni qayta yoqish"},
+            ]
+            req = urllib.request.Request(
+                f"{base}/setMyCommands",
+                data=json.dumps({"commands": cmds}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=6.0)
+        except Exception as exc:
+            logger.debug("setMyCommands notice: %s", exc)
 
     def broadcast(self, text: str) -> int:
         """Broadcast a message to all active subscribers."""
@@ -341,6 +394,7 @@ class TelegramBotService:
         """
         if not self.config.has_valid_telegram_token():
             return 0
+        self._ensure_polling_ready()
 
         params = urllib.parse.urlencode(
             {
@@ -385,6 +439,10 @@ class TelegramBotService:
                 first_name=str(user.get("first_name", "")),
             )
             self.send_message_to_chat(chat_id, reply)
+            if text.split()[0].split("@")[0].lower() == "/start":
+                active_sigs = self.db.get_active_signals()
+                if active_sigs:
+                    self.send_message_to_chat(chat_id, format_new_signal_message(active_sigs[-1]))
             processed += 1
 
         return processed

@@ -294,6 +294,8 @@ class WebhookHTTPServer:
                             "is_paused": proc.db.is_paused(),
                             "active_signals": stats["active_signals"],
                             "virtual_balance": stats["current_balance"],
+                            "telegram_configured": proc.config.has_valid_telegram_token(),
+                            "subscribers_count": len(proc.db.get_active_subscribers()),
                         },
                     )
                 else:

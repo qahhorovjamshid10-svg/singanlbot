@@ -84,13 +84,16 @@ class BotConfig:
     def from_env(cls, env_path: Optional[Path] = None) -> "BotConfig":
         """Load configuration from environment variables and optional .env file."""
         _load_env_file(env_path)
+        raw_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip().strip('"').strip("'")
+        if raw_token.lower().startswith("bot") and ":" in raw_token:
+            raw_token = raw_token[3:]
         return cls(
-            telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
+            telegram_bot_token=raw_token,
             telegram_default_chat_id=(
                 os.getenv("TELEGRAM_DEFAULT_CHAT_ID", "")
                 or os.getenv("TELEGRAM_CHAT_IDS", "")
                 or os.getenv("TELEGRAM_CHAT_ID", "")
-            ).strip(),
+            ).strip().strip('"').strip("'"),
             symbol=os.getenv("SYMBOL", "XAUUSD").strip().upper(),
             timeframe=os.getenv("TIMEFRAME", "15m").strip(),
             market_data_source=os.getenv("MARKET_DATA_SOURCE", "auto").strip().lower(),

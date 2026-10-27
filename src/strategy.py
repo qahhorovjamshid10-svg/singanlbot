@@ -196,10 +196,10 @@ class XAUUSDStrategy:
                 reason = "EMA50/EMA200 Death Cross + RSI14 bearish momentum"
             elif ema_pullback_reject:
                 side = "SELL"
-                reason = "Downtrend (EMA50 < EMA200) + EMA50 zona pullback rejection + RSI14 tasdiq"
+                reason = "Downtrend (EMA50 pastda EMA200 dan) + EMA50 zona pullback rejection + RSI14 tasdiq"
             elif (rsi_cross_down or rsi_impulse_down) and (ef - curr.close) <= 1.8 * atr:
                 side = "SELL"
-                reason = "Downtrend (EMA50 < EMA200) + RSI14 bearish impuls tasdig'i"
+                reason = "Downtrend (EMA50 pastda EMA200 dan) + RSI14 bearish impuls tasdig'i"
 
         if side is None:
             return None
