@@ -9,6 +9,12 @@ from typing import Any, Optional
 
 from src.config import BotConfig
 from src.database import SignalDatabase
+from src.indicators import (
+    compute_atr_series,
+    compute_ema_series,
+    compute_latest_indicators,
+    compute_rsi_series,
+)
 from src.market_data import MarketDataProvider
 from src.models import Candle, LevelHitEvent, Signal
 from src.paper_trader import PaperTradingEngine
@@ -43,7 +49,9 @@ class SignalBotEngine:
             twelvedata_api_key=self.config.twelvedata_api_key,
         )
         self.telegram_bot = telegram_bot or TelegramBotService(
-            db=self.db, config=self.config
+            db=self.db,
+            config=self.config,
+            scan_callback=self.build_live_scan_report,
         )
         self.webhook_processor = WebhookProcessor(
             db=self.db,
@@ -84,6 +92,117 @@ class SignalBotEngine:
         self.strategy.register_existing_keys([signal.signal_key])
         self.telegram_bot.notify_new_signal(signal)
 
+    def build_live_scan_report(self) -> str:
+        """Fetch latest market data and return a live technical analysis report for /scan."""
+        candles = self.market_provider.fetch_candles()
+        closed = [c for c in candles if c.is_closed]
+        if not closed:
+            return "⚠️ Yopilgan sham ma'lumotlari topilmadi."
+
+        snap = compute_latest_indicators(
+            closed,
+            ema_fast_period=self.config.ema_fast_period,
+            ema_slow_period=self.config.ema_slow_period,
+            rsi_period=self.config.rsi_period,
+            atr_period=self.config.atr_period,
+        )
+        last_c = closed[-1]
+        spot = self.market_provider.last_spot_quote
+        spot_line = (
+            f"• <b>Swissquote Spot XAU/USD:</b> <code>{spot['mid']:.2f}</code> "
+            f"(Bid: {spot['bid']:.2f} / Ask: {spot['ask']:.2f})\n"
+            if spot
+            else ""
+        )
+        if snap is None:
+            return "⚠️ Indikatorlarni hisoblash uchun yetarli shamlar yo'q."
+
+        trend = (
+            "🟢 KO'TARILUVCHI (BULLISH: EMA50 > EMA200)"
+            if snap.ema_fast > snap.ema_slow
+            else "🔴 PASAYUVCHI (BEARISH: EMA50 < EMA200)"
+        )
+        return (
+            "🔎 <b>XAUUSD JONLI BOZOR VA INDIKATOR TAHLILI (/scan)</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"• <b>Manba:</b> {self.market_provider.last_used_source}\n"
+            f"{spot_line}"
+            f"• <b>Oxirgi yopilgan sham ({self.config.timeframe}):</b> {last_c.iso_time}\n"
+            f"• <b>Yopilish narxi (Close):</b> <code>{last_c.close:.2f}</code> "
+            f"(H: {last_c.high:.2f} / L: {last_c.low:.2f})\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"• <b>Trend:</b> {trend}\n"
+            f"• <b>EMA 50:</b> <code>{snap.ema_fast:.2f}</code> | <b>EMA 200:</b> <code>{snap.ema_slow:.2f}</code>\n"
+            f"• <b>RSI 14:</b> <code>{snap.rsi:.2f}</code> (Oldingi: <code>{(snap.prev_rsi or snap.rsi):.2f}</code>)\n"
+            f"• <b>ATR 14:</b> <code>{snap.atr:.2f}</code> (SL masofa: <code>{snap.atr * self.config.atr_sl_multiplier:.2f}</code>)\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "ℹ️ <i>Bot har 60 soniyada yangi yopilgan shamni avtomatik tekshiradi va signal chiqishi bilan xabar yuboradi.</i>"
+        )
+
+    def _warmup_recent_candles_if_empty(self, closed_candles: list[Candle], lookback: int = 12) -> Optional[Signal]:
+        """
+        If SQLite database is completely empty (e.g. fresh deploy on Render),
+        scan the last `lookback` closed candles so any recent signal from the
+        current session is immediately captured and monitored.
+        """
+        if self.db.get_all_signal_keys():
+            return None
+
+        min_len = max(
+            self.config.ema_fast_period,
+            self.config.ema_slow_period,
+            self.config.rsi_period + 1,
+            self.config.atr_period,
+        ) + 1
+        if len(closed_candles) < min_len:
+            return None
+
+        closes = [c.close for c in closed_candles]
+        ema_fast = compute_ema_series(closes, self.config.ema_fast_period)
+        ema_slow = compute_ema_series(closes, self.config.ema_slow_period)
+        rsi = compute_rsi_series(closes, self.config.rsi_period)
+        atr = compute_atr_series(closed_candles, self.config.atr_period)
+
+        start_idx = max(min_len - 1, len(closed_candles) - lookback)
+        last_new_signal: Optional[Signal] = None
+
+        for idx in range(start_idx, len(closed_candles)):
+            candle = closed_candles[idx]
+            for active_sig in self.db.get_active_signals():
+                self.paper_trader.evaluate_signal_on_candle(active_sig, candle)
+
+            risk_usd = self.paper_trader.current_risk_usd()
+            cand = self.strategy.evaluate_candle_index(
+                closed_candles=closed_candles,
+                idx=idx,
+                ema_fast_series=ema_fast,
+                ema_slow_series=ema_slow,
+                rsi_series=rsi,
+                atr_series=atr,
+                risk_usd=risk_usd,
+                source="polling",
+            )
+            if cand is None:
+                continue
+            active_same = any(
+                s.side == cand.side and s.status == "ACTIVE"
+                for s in self.db.get_active_signals()
+            )
+            if active_same:
+                continue
+            if self.db.save_signal(cand) is not None:
+                self.strategy.register_existing_keys([cand.signal_key])
+                last_new_signal = cand
+
+        # Run TP/SL checks up to the final closed candle
+        for active_sig in self.db.get_active_signals():
+            for idx in range(start_idx, len(closed_candles)):
+                self.paper_trader.evaluate_signal_on_candle(active_sig, closed_candles[idx])
+
+        if last_new_signal is not None:
+            self.telegram_bot.notify_new_signal(last_new_signal)
+        return last_new_signal
+
     def run_market_cycle_once(
         self, candles_override: Optional[list[Candle]] = None
     ) -> dict[str, Any]:
@@ -106,16 +225,29 @@ class SignalBotEngine:
         self.db.set_state("last_check_time", now_str)
         self.db.set_state("last_data_source", self.market_provider.last_used_source)
 
+        closed_candles = [c for c in candles if c.is_closed]
+        if not closed_candles:
+            return {"status": "no_closed_candles", "new_signal": None, "level_events": []}
+
+        # Warm-up recent candles if DB is empty on fresh deploy (only on real market polling)
+        if candles_override is None and not self.db.get_all_signal_keys():
+            warm_sig = self._warmup_recent_candles_if_empty(closed_candles, lookback=12)
+            latest_closed = closed_candles[-1]
+            self.db.set_state("last_processed_candle_ts", str(latest_closed.timestamp))
+            return {
+                "status": "ok",
+                "latest_closed_candle": latest_closed.iso_time,
+                "latest_close_price": latest_closed.close,
+                "new_signal": warm_sig,
+                "level_events": [],
+            }
+
         # 1. Monitor active signals for TP1/TP2/TP3/SL hits
         level_events: list[LevelHitEvent] = self.paper_trader.process_active_signals(candles)
         for ev in level_events:
             self.telegram_bot.notify_level_hit(ev)
 
         # 2. Evaluate latest closed candle for new BUY/SELL signal
-        closed_candles = [c for c in candles if c.is_closed]
-        if not closed_candles:
-            return {"status": "no_closed_candles", "new_signal": None, "level_events": level_events}
-
         latest_closed = closed_candles[-1]
         self.db.set_state("last_processed_candle_ts", str(latest_closed.timestamp))
 
@@ -126,7 +258,6 @@ class SignalBotEngine:
 
         new_signal: Optional[Signal] = None
         if candidate is not None:
-            # Check if an active signal in the same direction already exists
             active_same_side = any(
                 s.side == candidate.side and s.status == "ACTIVE"
                 for s in self.db.get_active_signals()

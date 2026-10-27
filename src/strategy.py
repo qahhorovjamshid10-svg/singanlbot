@@ -152,21 +152,22 @@ class XAUUSDStrategy:
         if bullish_trend and bullish_momentum and curr.close > curr.open and candle_body >= 0.25 * atr:
             golden_cross = prev_ef <= prev_es and ef > es
             rsi_cross_up = prev_rsi < 50.0 and rsi >= 50.0
+            rsi_impulse_up = prev_rsi <= 55.0 and (rsi - prev_rsi) >= 3.0
             ema_pullback_bounce = (
-                prev.low <= prev_ef
+                min(prev.low, curr.low) <= ef + 0.5 * atr
                 and prev.close >= prev_es
                 and curr.close > ef
-                and (curr.close - ef) <= 1.2 * atr
+                and (curr.close - ef) <= 1.5 * atr
             )
             if golden_cross:
                 side = "BUY"
                 reason = "EMA50/EMA200 Golden Cross + RSI14 bullish momentum"
             elif ema_pullback_bounce:
                 side = "BUY"
-                reason = "Uptrend (EMA50 > EMA200) + EMA50 pullback bounce + RSI14 tasdiq"
-            elif rsi_cross_up and (curr.close - ef) <= 1.2 * atr:
+                reason = "Uptrend (EMA50 > EMA200) + EMA50 zona pullback bounce + RSI14 tasdiq"
+            elif (rsi_cross_up or rsi_impulse_up) and (curr.close - ef) <= 1.5 * atr:
                 side = "BUY"
-                reason = "Uptrend (EMA50 > EMA200) + RSI14 50+ impuls tasdig'i"
+                reason = "Uptrend (EMA50 > EMA200) + RSI14 bullish impuls tasdig'i"
 
         # --- SELL SHARTLARI ---
         # Trend: EMA 50 < EMA 200, ikkala EMA pasaymoqda va sham EMA 50 ostida yopilgan
@@ -183,21 +184,22 @@ class XAUUSDStrategy:
         if side is None and bearish_trend and bearish_momentum and curr.close < curr.open and candle_body >= 0.25 * atr:
             death_cross = prev_ef >= prev_es and ef < es
             rsi_cross_down = prev_rsi > 50.0 and rsi <= 50.0
+            rsi_impulse_down = prev_rsi >= 45.0 and (prev_rsi - rsi) >= 3.0
             ema_pullback_reject = (
-                prev.high >= prev_ef
+                max(prev.high, curr.high) >= ef - 0.5 * atr
                 and prev.close <= prev_es
                 and curr.close < ef
-                and (ef - curr.close) <= 1.2 * atr
+                and (ef - curr.close) <= 1.8 * atr
             )
             if death_cross:
                 side = "SELL"
                 reason = "EMA50/EMA200 Death Cross + RSI14 bearish momentum"
             elif ema_pullback_reject:
                 side = "SELL"
-                reason = "Downtrend (EMA50 < EMA200) + EMA50 pullback rejection + RSI14 tasdiq"
-            elif rsi_cross_down and (ef - curr.close) <= 1.2 * atr:
+                reason = "Downtrend (EMA50 < EMA200) + EMA50 zona pullback rejection + RSI14 tasdiq"
+            elif (rsi_cross_down or rsi_impulse_down) and (ef - curr.close) <= 1.8 * atr:
                 side = "SELL"
-                reason = "Downtrend (EMA50 < EMA200) + RSI14 50- impuls tasdig'i"
+                reason = "Downtrend (EMA50 < EMA200) + RSI14 bearish impuls tasdig'i"
 
         if side is None:
             return None

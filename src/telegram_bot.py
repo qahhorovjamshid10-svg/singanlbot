@@ -83,10 +83,12 @@ class TelegramBotService:
         db: SignalDatabase,
         config: Optional[BotConfig] = None,
         send_callback: Optional[Callable[[str, str], bool]] = None,
+        scan_callback: Optional[Callable[[], str]] = None,
     ) -> None:
         self.db = db
         self.config = config or BotConfig()
         self._send_callback = send_callback
+        self._scan_callback = scan_callback
         self._last_update_id: int = 0
 
         for cid in self.config.get_default_chat_ids():
@@ -116,6 +118,8 @@ class TelegramBotService:
             return self._cmd_start(first_name)
         if cmd == "/status":
             return self._cmd_status()
+        if cmd == "/scan":
+            return self._cmd_scan()
         if cmd == "/signals":
             return self._cmd_signals()
         if cmd == "/stats":
@@ -128,6 +132,7 @@ class TelegramBotService:
         return (
             "🤖 Noma'lum buyruq. Mavjud buyruqlar:\n"
             "/start — Botni boshlash\n"
+            "/scan — Hozirgi jonli bozor va indikatorlar tahlili\n"
             "/status — Faol signallar va monitoring holati\n"
             "/signals — Signal tarixi\n"
             "/stats — Demo savdo natijalari\n"
@@ -135,18 +140,38 @@ class TelegramBotService:
             "/resume — Signal monitoringini davom ettirish"
         )
 
+    def _cmd_scan(self) -> str:
+        if self._scan_callback is not None:
+            try:
+                return self._scan_callback()
+            except Exception as exc:
+                return f"⚠️ Jonli tahlilda xatolik: {exc}"
+        return self._cmd_status()
+
     def _cmd_start(self, first_name: str = "") -> str:
         greeting = f"Assalomu alaykum, {first_name}!" if first_name else "Assalomu alaykum!"
         paused_str = "⏸ PAUZA" if self.db.is_paused() else "▶️ FAOL"
         balance = self.db.get_virtual_balance(self.config.initial_virtual_balance)
+        active = self.db.get_active_signals()
+        active_block = ""
+        if active:
+            s = active[-1]
+            active_block = (
+                "\n🔥 <b>HOZIRGI FAOL SIGNAL:</b>\n"
+                f"• <b>{s.symbol} {s.side}</b> ({s.candle_iso_time})\n"
+                f"• Entry: <code>{s.entry_price:.2f}</code> | SL: <code>{s.stop_loss:.2f}</code>\n"
+                f"• TP1: <code>{s.tp1:.2f}</code> | TP2: <code>{s.tp2:.2f}</code> | TP3: <code>{s.tp3:.2f}</code>\n"
+            )
         return (
             f"👋 <b>{greeting} XAUUSD (Gold) AI Signal Botga xush kelibsiz!</b>\n\n"
             f"📌 <b>Bozor:</b> {self.config.symbol} ({self.config.timeframe})\n"
             f"📐 <b>Algoritm:</b> EMA 50/200 (Trend) + RSI 14 (Momentum) + ATR 14 (SL/TP)\n"
             f"🕯 <b>Tasdiqlash:</b> Faqat sham yopilgandan keyin (Closed Candle)\n"
             f"💼 <b>Rejim:</b> Faqat Demo / Paper Trading (Virtual balans: <code>${balance:,.2f}</code>)\n"
-            f"📡 <b>Monitoring holati:</b> {paused_str}\n\n"
+            f"📡 <b>Monitoring holati:</b> {paused_str}\n"
+            f"{active_block}\n"
             "📋 <b>Buyruqlar ro'yxati:</b>\n"
+            "• /scan — Jonli XAUUSD narxi va indikatorlar tahlili\n"
             "• /status — Faol signallar va bot holati\n"
             "• /signals — Oxirgi signallar tarixi\n"
             "• /stats — Demo savdo statistikasi\n"
